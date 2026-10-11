@@ -1,0 +1,2 @@
+# Kripta
+Frontend da Kripta.
