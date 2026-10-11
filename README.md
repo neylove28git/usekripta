@@ -1,5 +1,4 @@
 # Kripta
-
 Frontend da Kripta: uma experiência de análise de criptomoedas com chat e agente de IA, construída a partir das referências visuais fornecidas.
 
 ## Rodar localmente
