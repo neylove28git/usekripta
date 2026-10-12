@@ -63,7 +63,7 @@ export async function POST(request: Request) {
     const data = await upstream.json().catch(() => null) as { choices?: Array<{ message?: { content?: string } }>; error?: { message?: string; code?: string } } | null;
     if (!upstream.ok) {
       const message = data?.error?.message || 'Não foi possível obter uma resposta da IA.';
-      const modelUnavailable = /model.+(invalid|not found|unavailable)|invalid model/i.test(message);
+      const modelUnavailable = /not a valid model|model.+(invalid|not found|unavailable)|invalid model/i.test(message);
       const status = upstream.status === 401 || upstream.status === 403 ? 502 : upstream.status === 429 ? 429 : 503;
       console.error('OpenRouter recusou a solicitação:', upstream.status, data?.error?.code || 'sem-código');
       return json({ error: status === 429 ? 'O limite do provedor foi atingido. Tente novamente em alguns instantes.' : status === 502 ? 'A configuração da IA foi recusada pelo provedor.' : modelUnavailable ? 'O modelo de IA configurado não está disponível no OpenRouter. Atualize OPENROUTER_MODEL no ambiente do servidor e tente novamente.' : message }, status);
