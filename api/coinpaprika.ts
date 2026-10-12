@@ -42,11 +42,15 @@ function compact(value: number, currency: Currency) { return new Intl.NumberForm
 function percent(value: number) { return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2, signDisplay: 'exceptZero' }).format(value); }
 function isoDay(date: Date) { return date.toISOString().slice(0, 10); }
 
-const stopWords = new Set(['analise','analisa','analise','mercado','preco','cotacao','cotacoes','grafico','historico','historica','hoje','semana','mes','meses','ano','anos','compare','comparar','com','para','sobre','como','esta','estao','quero','quanto','vale','valor','atual','dados','cripto','criptomoeda','criptomoedas','moeda','moedas','brl','usd','reais','dolar','dolares','de','da','do','e','ou','a','o','as','os','em','por','favor']);
+const commonAssets = ['bitcoin','ethereum','solana','xrp','ripple','cardano','dogecoin','binance','tether','usdc','avalanche','chainlink','polkadot','tron','shiba','sui','litecoin','uniswap','stellar','monero','aave','near','aptos','arbitrum','optimism','render','hedera','cosmos','tezos','algorand','filecoin','polygon','mantle','pepe','bonk'];
+const commonSymbols = new Set(['btc','eth','sol','xrp','ada','doge','bnb','usdt','usdc','avax','link','dot','trx','shib','sui','ltc','uni','xlm','xmr','aave','near','apt','arb','op','rndr','hbar','atom','xtz','algo','fil','matic','mnt','pepe','bonk']);
 
 function candidates(question: string) {
-  const words = plain(question).match(/[a-z0-9]{2,30}/g) || [];
-  return [...new Set(words.filter((word) => !stopWords.has(word)).slice(0, 6))];
+  const normalized = plain(question);
+  const named = commonAssets.filter((asset) => new RegExp(`\\b${asset}\\b`).test(normalized));
+  const explicitSymbols = question.match(/\b[A-Z0-9]{2,10}\b/g) || [];
+  const symbols = explicitSymbols.map((symbol) => symbol.toLowerCase()).filter((symbol) => commonSymbols.has(symbol));
+  return [...new Set([...named, ...symbols])].slice(0, 3);
 }
 
 async function resolveCoin(term: string): Promise<Coin | null> {

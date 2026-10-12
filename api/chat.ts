@@ -1,4 +1,4 @@
-import { getMarketInsight, marketErrorMessage } from './coinpaprika';
+import { getMarketInsight, marketErrorMessage } from './coinpaprika.js';
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
 type ChatRequest = { messages: ChatMessage[]; mode?: 'chat' | 'market' | 'agent'; marketContext?: string; structured?: boolean; retry?: boolean };
