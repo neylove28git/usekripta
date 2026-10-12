@@ -1,3 +1,5 @@
+import { getMarketInsight, marketErrorMessage } from './coinpaprika';
+
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
 type ChatRequest = { messages: ChatMessage[]; mode?: 'chat' | 'market' | 'agent'; marketContext?: string; structured?: boolean; retry?: boolean };
 
@@ -62,11 +64,28 @@ export async function POST(request: Request) {
   const context = payload.marketContext?.trim() ? `\n\nDados disponíveis na plataforma (podem estar desatualizados):\n${payload.marketContext.trim()}` : '';
   try {
     if(payload.structured){
-      const formatInstruction=`${systemInstructions.market}${context}\n\nResponda somente no JSON de blocos solicitado. Inclua texto curto e natural. Só inclua card quando cada número vier explicitamente do contexto e data.source e data.period identificarem sua origem. Sem contexto verificável, devolva somente um bloco de texto explicando a limitação. No máximo três cards.`;
+      const question = [...payload.messages].reverse().find((message) => message.role === 'user')?.content || '';
+      let marketContext = context;
+      let verifiedCards: unknown[] = [];
+      if (mode === 'market') {
+        try {
+          const insight = await getMarketInsight(question);
+          if (insight.context) marketContext += `\n\nDados verificados da CoinPaprika:\n${insight.context}`;
+          if (insight.limitation) marketContext += `\n\nLimitação da fonte: ${insight.limitation}`;
+          verifiedCards = insight.cards;
+        } catch (error) {
+          marketContext += `\n\nLimitação da fonte: ${marketErrorMessage(error)}`;
+          console.error('CoinPaprika indisponível para análise:', error instanceof Error ? error.name : 'erro-desconhecido');
+        }
+      }
+      const formatInstruction=`${systemInstructions.market}${marketContext}\n\nResponda somente no JSON de blocos solicitado. Inclua texto curto e natural. Retorne exclusivamente blocos do tipo text: os cards são montados pelo servidor somente a partir dos dados verificados da CoinPaprika. Sem dados verificáveis, explique a limitação em um bloco de texto. Não invente números, séries, datas ou fontes.`;
       const structuredUpstream=await fetch('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:{authorization:`Bearer ${key}`,'content-type':'application/json','http-referer':request.headers.get('origin')||'https://usekripta.vercel.app','x-title':'Kripta'},body:JSON.stringify({model,messages:[{role:'system',content:formatInstruction},...payload.messages],temperature:0.35,max_tokens:1400,response_format:{type:'json_schema',json_schema:{name:'kripta_chat_blocks',strict:true,schema:structuredSchema}}})});
       const data=await structuredUpstream.json().catch(()=>null) as {choices?:Array<{message?:{content?:string}}>;error?:{message?:string;code?:string}}|null;
       if(!structuredUpstream.ok){const message=data?.error?.message||'Não foi possível obter uma análise da IA.';const status=structuredUpstream.status===429?429:structuredUpstream.status===401||structuredUpstream.status===403?502:503;console.error('OpenRouter recusou análise estruturada:',structuredUpstream.status,data?.error?.code||'sem-código');return json({error:status===429?'O limite do provedor foi atingido. Tente novamente em alguns instantes.':status===502?'A configuração da IA foi recusada pelo provedor.':message},status)}
-      const content=data?.choices?.[0]?.message?.content;let blocks:unknown=null;try{blocks=JSON.parse(cleanEmoji(content||''))}catch{}if(!validStructured(blocks))return json({error:'A IA retornou uma análise inválida.'},502);return json({blocks});
+      const content=data?.choices?.[0]?.message?.content;let blocks:unknown=null;try{blocks=JSON.parse(cleanEmoji(content||''))}catch{}if(!validStructured(blocks))return json({error:'A IA retornou uma análise inválida.'},502);
+      const textBlocks=(blocks as {blocks:unknown[]}).blocks.filter((block)=>Boolean(block)&&typeof block==='object'&&(block as {type?:unknown}).type==='text');
+      const safeBlocks=textBlocks.length?textBlocks:[{type:'text',markdown:'Não há dados verificáveis suficientes para montar uma análise de mercado agora.'}];
+      return json({blocks:{blocks:[...safeBlocks,...verifiedCards].slice(0,7)}});
     }
     const upstream = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
