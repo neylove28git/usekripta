@@ -8,7 +8,7 @@ const MAX_CONTENT_LENGTH = 4_000;
 const attempts = new Map<string, number[]>();
 
 const systemInstructions = {
-  chat: 'Você é Koin, assistente da Kripta. Responda sempre em português claro e conciso. Não dê recomendação financeira personalizada; apresente riscos e ressalve incertezas.',
+  chat: 'Você é Koin, assistente da Kripta. Responda sempre em português claro, objetivo e útil. Mantenha-se no tema de cripto, investimentos, mercado e uso da Kripta. Seja conciso, use Markdown quando ajudar e não use emojis. Não dê recomendação financeira personalizada; apresente riscos e ressalve incertezas.',
   market: 'Você é Koin, analista da Kripta. Analise exclusivamente os dados de mercado fornecidos no contexto. Não invente preços, cotações, indicadores, datas ou notícias. Se o contexto estiver ausente, insuficiente ou desatualizado, diga isso claramente. Responda em português e não faça recomendação financeira personalizada.',
   agent: 'Você é Koin, agente da Kripta. Interprete o pedido e explique o que pode ser feito com os dados e ferramentas realmente fornecidos. Nunca afirme ter criado alertas, conectado corretoras, executado transações ou consultado dados externos sem uma ferramenta e confirmação reais. Peça confirmação para ações importantes. Responda em português.',
 } as const;
@@ -16,6 +16,10 @@ const systemInstructions = {
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
 }
+
+// Remove somente sequências de emoji; letras acentuadas, símbolos financeiros, Markdown e código permanecem intactos.
+function cleanEmoji(text: string) { return text.replace(/(?:\p{Regional_Indicator}{2}|[#*0-9]\uFE0F?\u20E3|\p{Emoji_Presentation}(?:\uFE0F|\u200D\p{Emoji_Presentation})*)/gu, ''); }
+function sse(body: ReadableStream<Uint8Array>) { return new Response(body, { headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache, no-transform', connection: 'keep-alive', 'x-accel-buffering': 'no' } }); }
 
 function clientKey(request: Request) {
   return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || request.headers.get('x-real-ip') || 'anonymous';
@@ -58,22 +62,40 @@ export async function POST(request: Request) {
     const upstream = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json', 'http-referer': request.headers.get('origin') || 'https://usekripta.vercel.app', 'x-title': 'Kripta' },
-      body: JSON.stringify({ model, messages: [{ role: 'system', content: `${systemInstructions[mode]}${context}` }, ...payload.messages], temperature: 0.35, max_tokens: 850 }),
+      body: JSON.stringify({ model, messages: [{ role: 'system', content: `${systemInstructions[mode]}${context}` }, ...payload.messages], temperature: 0.4, max_tokens: 850, stream: true }),
     });
-    const data = await upstream.json().catch(() => null) as { choices?: Array<{ message?: { content?: string } }>; error?: { message?: string; code?: string } } | null;
     if (!upstream.ok) {
+      const data = await upstream.json().catch(() => null) as { error?: { message?: string; code?: string } } | null;
       const message = data?.error?.message || 'Não foi possível obter uma resposta da IA.';
       const modelUnavailable = /not a valid model|model.+(invalid|not found|unavailable)|invalid model/i.test(message);
       const status = upstream.status === 401 || upstream.status === 403 ? 502 : upstream.status === 429 ? 429 : 503;
       console.error('OpenRouter recusou a solicitação:', upstream.status, data?.error?.code || 'sem-código');
       return json({ error: status === 429 ? 'O limite do provedor foi atingido. Tente novamente em alguns instantes.' : status === 502 ? 'A configuração da IA foi recusada pelo provedor.' : modelUnavailable ? 'O modelo de IA configurado não está disponível no OpenRouter. Atualize OPENROUTER_MODEL no ambiente do servidor e tente novamente.' : message }, status);
     }
-    const content = data?.choices?.[0]?.message?.content?.trim();
-    if (!content) {
-      console.error('OpenRouter retornou uma resposta sem conteúdo.');
-      return json({ error: 'A IA retornou uma resposta inválida. Tente novamente.' }, 502);
-    }
-    return json({ content, model });
+    if (!upstream.body) return json({ error: 'A IA retornou uma resposta inválida. Tente novamente.' }, 502);
+    const reader = upstream.body.getReader(), decoder = new TextDecoder(), encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        let buffer = '';
+        const emit = (event:unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+        try {
+          while (true) {
+            const {done,value} = await reader.read();
+            buffer += decoder.decode(value || new Uint8Array(), {stream:!done});
+            const lines = buffer.split('\n'); buffer = lines.pop() || '';
+            for (const line of lines) {
+              if (!line.startsWith('data:')) continue;
+              const data = line.slice(5).trim(); if (data === '[DONE]') { emit({type:'done'}); continue; }
+              try { const chunk = JSON.parse(data) as {choices?:Array<{delta?:{content?:string}}>,error?:{message?:string}}; if (chunk.error?.message) emit({type:'error',error:chunk.error.message}); const text = cleanEmoji(chunk.choices?.[0]?.delta?.content || ''); if (text) emit({type:'delta',text}); } catch { /* ignore malformed upstream chunks */ }
+            }
+            if (done) break;
+          }
+        } catch (error) { if (!request.signal.aborted) emit({type:'error',error:'A conexão com a IA foi interrompida.'}); }
+        finally { reader.releaseLock(); controller.close(); }
+      },
+      cancel() { void reader.cancel(); },
+    });
+    return sse(stream);
   } catch (error) {
     console.error('Falha de rede ao consultar OpenRouter:', error instanceof Error ? error.name : 'erro-desconhecido');
     return json({ error: 'Não foi possível alcançar o serviço de IA. Tente novamente.' }, 503);
