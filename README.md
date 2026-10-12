@@ -32,7 +32,7 @@ npm run build
 
 Configure `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY` em `.env.local`. O cadastro, login, recuperação de senha, Google OAuth, renovação de sessão e logout usam o Supabase Auth. A chave publicável é própria para o frontend; nunca use uma chave `service_role` no navegador.
 
-Quando “Lembrar de mim” está marcado, a sessão é persistida no `localStorage`; desmarcado, permanece apenas no `sessionStorage`. Nome, usuário e avatar padrão são salvos nos metadados seguros do usuário do Supabase. Se a confirmação de e-mail estiver ativa no projeto, o usuário precisa confirmar o link antes do primeiro acesso. Para o Google funcionar, habilite o provedor no painel do Supabase e cadastre as URLs de redirecionamento local e de produção.
+Quando “Lembrar de mim” está marcado, a sessão é persistida no `localStorage`; desmarcado, permanece apenas no `sessionStorage`. Nome, usuário e avatar padrão são salvos nos metadados seguros do usuário do Supabase. O projeto está configurado para confirmar o e-mail automaticamente no cadastro, iniciar a sessão imediatamente e não enviar e-mail de confirmação. Para o Google funcionar, habilite o provedor no painel do Supabase e cadastre as URLs de redirecionamento local e de produção.
 
 Fluxo para testar: abra `/`, escolha **Começar agora**, cadastre-se, navegue pelo `/app`, use **Sair** no menu do perfil ou em Configurações → Conta e entre novamente em `/login`.
 

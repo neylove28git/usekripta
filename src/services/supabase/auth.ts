@@ -152,10 +152,11 @@ export async function register(name: string, email: string, password: string) {
     },
   });
   if (error) throw new Error(authError(error.message));
+  if (!data.session) throw new Error('A conta foi criada, mas não foi possível iniciar a sessão automaticamente. Tente entrar novamente.');
   currentSession = mapSession(data.session);
   initialized = true;
   notify();
-  return { session: currentSession, requiresConfirmation: Boolean(data.user && !data.session) };
+  return currentSession;
 }
 
 export async function googleSignIn() {
