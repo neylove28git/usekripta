@@ -1,5 +1,6 @@
 export type AiMode = 'chat' | 'market' | 'agent';
-export type AiMessage = { role: 'user' | 'assistant'; content: string };
+import {blocksToText,parseChatBlocks,type ChatBlocks} from './blocks';
+export type AiMessage = { id?:string; role: 'user' | 'assistant'; content: string; structured?:ChatBlocks|null; animate?:boolean };
 
 type StreamEvent = { type?: 'delta' | 'done' | 'error'; text?: string; error?: string };
 
@@ -18,3 +19,10 @@ export async function askKoin(messages: AiMessage[], mode: AiMode = 'chat', mark
   if (!answer) throw new Error('A IA retornou uma resposta vazia.');
   return answer;
 }
+
+export async function askKoinBlocks(messages: AiMessage[], marketContext?:string){
+ const request=async(retry=false)=>{const response=await fetch('/api/chat',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({messages,mode:'market',marketContext,structured:true,retry})});const body=await response.json().catch(()=>null) as {blocks?:unknown;error?:string}|null;if(!response.ok)throw new Error(body?.error||'Não foi possível responder agora.');const structured=parseChatBlocks(body?.blocks);if(!structured)throw new Error('A análise recebida não está em um formato válido.');return structured};
+ try{return await request()}catch(error){try{return await request(true)}catch{return {blocks:[{type:'text' as const,markdown:'Não foi possível estruturar esta análise agora. Posso explicar o contexto disponível em texto simples.'}]}}}
+}
+
+export const structuredText=(blocks:ChatBlocks)=>blocksToText(blocks);
