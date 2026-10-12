@@ -23,3 +23,5 @@ html[data-theme=light]{color-scheme:light;--bg:#fefefe;--side:#f7f8fa;--surface:
 .agent .user-message{position:relative;left:-145px}
 .agent .work{margin-left:-144px}
 .agent-reply{transform:translateX(-144px)}
+.plugin-logo{object-fit:contain;background:var(--soft);padding:8px}
+.account-actions{display:flex;gap:8px}.account-actions button{border:1px solid var(--line);border-radius:7px;padding:8px 13px}

@@ -7,3 +7,5 @@ vite.config.js
 vite.config.d.ts
 .edge-qa/
 artifacts/
+.env.local
+.env.*.local
